@@ -8,7 +8,7 @@ import httpx
 
 logger = logging.getLogger("fastapi_iot.telegram")
 
-TELEGRAM_BOT_TOKEN = "[REDACTED TELEGRAM TOKEN]"
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_API_BASE = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 SUBSCRIBERS_FILE = Path(__file__).resolve().parent.parent / "telegram_subscribers.json"
 

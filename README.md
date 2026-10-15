@@ -10,6 +10,7 @@ Built with a **React + Vite** frontend, an **Express.js + PostgreSQL** (via Pris
 
 - [Features](#features)
 - [Tech Stack](#tech-stack)
+- [System Architecture](#system-architecture)
 - [Project Structure](#project-structure)
 - [Database Schema & Triggers](#database-schema--triggers)
 - [API Routes](#api-routes)
@@ -17,7 +18,10 @@ Built with a **React + Vite** frontend, an **Express.js + PostgreSQL** (via Pris
   - [Prerequisites](#prerequisites)
   - [Backend Setup](#backend-setup)
   - [Frontend Setup](#frontend-setup)
-- [Environment Variables](#environment-variables)
+    - [FastAPI IoT Service Setup](#fastapi-iot-service-setup)
+  - [Environment Variables](#environment-variables)
+  - [Validation](#validation)
+  - [Security Notes](#security-notes)
 - [Pages & Navigation](#pages--navigation)
 - [Docker (Local Development)](#-docker-local-development)
 - [Deployment Architecture (Render + Vercel)](#️-deployment-architecture-render--vercel)
@@ -64,6 +68,31 @@ Built with a **React + Vite** frontend, an **Express.js + PostgreSQL** (via Pris
 
 ---
 
+## 🏗️ System Architecture
+
+The repository contains a browser application, a sanctuary management API, and a separate
+IoT/hardware service:
+
+```text
+React/Vite frontend
+        │
+        ├── Express REST API ─── Prisma ─── PostgreSQL
+        │                              └── SQL views, functions, and triggers
+        │
+        └── FastAPI IoT service
+              ├── PostgreSQL telemetry access
+              ├── ESP32 serial bridge
+              ├── ESP32-CAM snapshot/flash control
+              ├── Audio and vision analysis agents
+              ├── WebSocket telemetry broadcast
+              └── Telegram alert notifications
+```
+
+The Express API is the primary visitor/admin business API. The FastAPI service handles
+device-facing operations and must be deployed separately from the Express service.
+
+---
+
 ## 📁 Project Structure
 
 ```
@@ -104,6 +133,19 @@ wildlife-sanctuary-dbms/
 │       ├── pages/          # Application routes & Admin tabs
 │       ├── App.jsx         # Root router configuration
 │       └── main.jsx        # Entry point
+│
+├── fastapi-iot-service/
+│   ├── routers/             # Telemetry, hardware, and node APIs
+│   ├── services/            # Serial, camera, AI, event, and Telegram services
+│   ├── uploads/             # Runtime media; ignored by Git
+│   ├── main.py              # FastAPI entry point
+│   └── requirements.txt     # Python dependencies
+│
+├── firmware/
+│   ├── device1_esp32_audio_sensor/ # Acoustic/vibration ESP32 firmware
+│   └── device2_esp32_cam/           # ESP32-CAM firmware
+│
+├── docker-compose.yml       # Local PostgreSQL + Express backend
 └── render.yaml             # Render Blueprint configuration
 ```
 
@@ -324,6 +366,47 @@ The project uses advanced PostgreSQL features defined in [`backend/database/core
 
 ---
 
+### FastAPI IoT Service Setup
+
+The IoT service requires Python 3.11+ and is independent of the Node backend:
+
+```powershell
+cd fastapi-iot-service
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+Create `fastapi-iot-service/.env` or configure the variables in the deployment
+environment:
+
+```env
+DATABASE_URL="postgresql://<user>:<password>@<host>:5432/wildlife_db?sslmode=require"
+FASTAPI_PORT=8000
+HOST=0.0.0.0
+DEBUG=false
+FRONTEND_URL=http://localhost:5173
+OPENAI_API_KEY=
+TELEGRAM_BOT_TOKEN=
+DEFAULT_NODE_UID=DGN-NODE-67SF-608
+```
+
+Start the service:
+
+```powershell
+python main.py
+```
+
+It serves the API at `http://localhost:8000`, interactive documentation at
+`http://localhost:8000/docs`, and telemetry WebSockets at
+`ws://localhost:8000/ws/telemetry`.
+
+Do not commit `.env` files, Telegram tokens, OpenAI keys, uploaded media, or
+subscriber state. The ESP32 hardware bridge requires the service to run on a host
+with access to the configured COM port.
+
+---
+
 ## 🐳 Docker (Local Development)
 
 The repository includes a complete local Docker environment (`docker-compose.yml`).
@@ -345,6 +428,43 @@ This application is deployed across modern cloud services for maximum performanc
 - **Backend API & PostgreSQL**: Hosted on **Render** using Docker and Managed PostgreSQL.
   - On every deployment, `start.sh` automatically runs `npx prisma migrate deploy` and executes `node scripts/applyExtensions.js` to ensure all triggers and views are live.
 - **Frontend SPA**: Hosted on **Vercel** with `vercel.json` rewrite rules configured for seamless React Router client-side navigation.
+- **FastAPI IoT service**: Deploy separately as a Python web service. Configure the same
+  database, `VITE_FASTAPI_URL`, `OPENAI_API_KEY`, and `TELEGRAM_BOT_TOKEN` through the
+  hosting provider's secret/environment-variable manager. The Render Blueprint in this
+  repository currently provisions the Express backend and PostgreSQL only.
+
+---
+
+## ✅ Validation
+
+Run the available project checks from the repository root:
+
+```powershell
+cd backend
+npm run build
+
+cd ..\frontend
+npm run lint
+npm run build
+
+cd ..\fastapi-iot-service
+python -m compileall -q .
+```
+
+The frontend lint command is the quality gate for JavaScript/React source. The production
+build and Python compilation checks do not replace API integration or hardware tests.
+
+---
+
+## 🔐 Security Notes
+
+- Use a long, randomly generated `JWT_SECRET` in every deployed environment.
+- Keep `DATABASE_URL`, `OPENAI_API_KEY`, and `TELEGRAM_BOT_TOKEN` in secret management.
+- Restrict Express and FastAPI CORS origins to the deployed frontend.
+- Protect FastAPI hardware-control and WebSocket endpoints before exposing them publicly.
+- Keep IoT camera devices on a private network; do not expose ESP32 endpoints directly to the internet.
+- Uploaded audio and images are runtime evidence and are intentionally excluded from Git.
+- Rotate any credential immediately if it is accidentally committed or shared.
 
 ---
 
